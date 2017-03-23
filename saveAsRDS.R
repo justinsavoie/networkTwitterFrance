@@ -27,5 +27,5 @@ saving <- function(x) {
   saveRDS(tweets, paste0("tweets",str_extract_all(x,"[0-9]+") %>% unlist() %>% as.numeric(),".rds"), compress="xz")
 }
 
-
+#lapply(whateverIwanttosave,saving)
 

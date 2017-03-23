@@ -33,38 +33,44 @@ listOfSCrapes <- list.files() %>% .[
      str_detect(".rds") %>%
      which)]
 
+edges <- tibble::data_frame(hasretweeted = as.character(),
+                            hasbeenretweeted = as.character(),
+                            hasretweetedNames = as.character())
+
+# eventually change this very bad "<<-"
 
 readRDSTweets <- function(x) {
   
-  tweets.df <- readRDS(paste0(x))
+  tweets.df <- readRDS(listOfSCrapes[1])
   
   tweets.df$is.retweet <- ifelse(str_sub(tweets.df$text,1,2)=="RT",1,0)
   tweets.df <- tweets.df %>% filter(is.retweet == 1)
   hasbeenretweeted <- str_extract(tweets.df$text, "@(.*?):")
   hasretweeted <- tweets.df$screen_name
   hasbeenretweeted <- str_sub(hasbeenretweeted,2,-2)
-  hasretweetedNames <- hasretweeted$names
+  hasretweetedNames <- tweets.df$name
   
-  remove(edges)
+  edges <<- bind_rows(edges, tibble::data_frame(hasretweeted, hasbeenretweeted, hasretweetedNames))
   
-  if (class(edges)[1] == "tbl_df"){
-    edges <- bind_rows(edges, tibble::data_frame(hasretweeted, hasbeenretweeted, hasretweetedNames))
-  }
-  
-  if (class(edges)[1] == "function"){
-    edges <- tibble::data_frame(hasretweeted,hasbeenretweeted, hasretweetedNames)
-  }
-  
+
 }
 
 
 
-a <- readRDSTweets(listOfSCrapes)
+for (i in 1:length(listOfSCrapes)) {
+  readRDSTweets(listOfSCrapes[i])
+}
 
+edgesKeep <- edges
+# Third column is only for later. For Labels of Major Importants Twitter Actors.
+# We will use them at that time.
+# Merging from col 1 to col 2, because we have Names of retweeters, not people being
+# retweeted, which is what we want.
+# If someone is very important and has never retweeteded, we might have to query twitter.
+edges <- edges %>%
+  dplyr::select(hasretweeted, hasbeenretweeted)
 
-
-
-
+names(edges) <- c("hr","hbr")
 
 edges <- edges %>%
   dplyr::filter(!is.na(hbr))
@@ -77,12 +83,9 @@ weightNodes <- edges %>%
   summarise (n = n())
 
 edges$n <- 1
+
 edges <- aggregate(edges[,3], edges[,-3], sum)
-
-weightEdges <- edges$x
-
-dfEdges <- edges %>%
-  dplyr::select(-x)
+edges <- tibble::as_data_frame(edges)
 
 nodes <- unique(c(edges$hbr,edges$hr))
 
@@ -90,7 +93,10 @@ nodes <- data.frame(vertex.name = nodes, stringsAsFactors = FALSE)
 
 dfNodes <- left_join(nodes, weightNodes, by = c("vertex.name" = "hbr"))
 
-dfEdges$weight <- weightEdges
+dfEdges <- edges
+
+names(dfEdges)[names(dfEdges)=="n"] <- "weight"
+
 
 
 dfEdges <- dfEdges[,c(2,1,3)]
@@ -133,10 +139,12 @@ gg <- graph_from_data_frame(dfEdges, directed=TRUE, vertices = dfNodes)
 wc <- cluster_walktrap(gg)
 
 dfNodes$group <- wc$membership
+
 ###Filter (only some) to make it less heavy
+
 dfNodes <- (dfNodes) %>% dplyr::filter(weight != 0.1)
 dfNodes$group[!(dfNodes$group %in% (as.numeric(names(tail(sort(table(dfNodes$group)))))))] <- 99
-dfNodes$Label <- ifelse(dfNodes$weight > quantile(dfNodes$weight,0.98), dfNodes$Label, "")
+dfNodes$Label <- ifelse(dfNodes$weight > quantile(dfNodes$weight,0.995), dfNodes$Label, "")
 
 
 write.csv(dfEdges, file = "dfEdges.csv", row.names = FALSE)
